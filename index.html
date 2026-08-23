@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#101317">
+<title>BLE Meter Android — Fluke + OWON</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#101317;--panel:#181d23;--panel2:#20262e;--text:#eef2f6;
+  --muted:#9aa7b5;--ok:#66d46f;--warn:#ffd05e;--bad:#ff7169;
+  --line:#313a45;--accent:#5da7ff;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+body{padding-bottom:max(18px,env(safe-area-inset-bottom))}
+header{
+  position:sticky;top:0;z-index:10;
+  padding:14px 15px calc(11px + env(safe-area-inset-top));
+  background:rgba(16,19,23,.96);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line)
+}
+.title{font-size:20px;font-weight:750}
+.subtitle{font-size:12px;color:var(--muted);margin-top:3px}
+.btline{margin-top:9px;font-size:12px;font-weight:700}
+main{padding:14px;max-width:720px;margin:auto}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:14px}
+.head{padding:12px 14px;background:var(--panel2);display:flex;justify-content:space-between;align-items:center;gap:12px}
+.head h2{font-size:17px;margin:0}
+.status{font-size:11px;font-weight:800;letter-spacing:.03em;white-space:nowrap;color:var(--muted)}
+.status.ok{color:var(--ok)}.status.bad{color:var(--bad)}.status.wait{color:var(--warn)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:currentColor;margin-right:6px;vertical-align:0}
+.body{padding:16px}
+.measure{display:flex;align-items:baseline;gap:9px;min-height:78px;overflow:hidden}
+.value{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:44px;font-weight:800;line-height:1;white-space:nowrap}
+.unit{font-size:22px;color:#d5dde7;white-space:nowrap}
+.mode{color:var(--muted);font-weight:700;margin-top:4px;min-height:22px}
+.hold{display:inline-block;margin-left:7px;border:1px solid #7b6525;color:#ffe079;padding:2px 7px;border-radius:6px;font-size:11px}
+.hidden{display:none}
+.meta{margin-top:13px;display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;color:var(--muted);font-size:12px}
+.meta b{color:#d7e0e9;font-weight:650}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:15px}
+.actions.three{grid-template-columns:1fr 1fr}
+button{
+  min-height:46px;border:1px solid #465361;border-radius:11px;background:#26313b;color:var(--text);
+  padding:10px 12px;font-size:14px;font-weight:750;touch-action:manipulation
+}
+button.primary{background:#245f9e;border-color:#4d87cc}
+button.warn{background:#5f511f;border-color:#88722a}
+button:disabled{opacity:.42}
+.tools{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:13px;margin-bottom:14px}
+.toolsGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+label.check{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-top:12px}
+input[type=checkbox]{width:19px;height:19px}
+.log{
+  background:#0b0e11;border:1px solid var(--line);border-radius:13px;padding:11px;max-height:180px;overflow:auto;
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;white-space:pre-wrap;color:#c7d0da
+}
+.note{font-size:12px;color:var(--muted);line-height:1.45;margin:10px 2px 0}
+@media(min-width:620px){
+ .value{font-size:58px}.unit{font-size:26px}
+ .actions.three{grid-template-columns:1fr 1fr 1fr}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="title">BLE Meter Monitor</div>
+  <div class="subtitle">Android • FLUKE 289 + OWON CMS061/CMS101</div>
+  <div id="btSupport" class="btline status wait"><span class="dot"></span>Проверка на Bluetooth…</div>
+</header>
+
+<main>
+  <section class="card">
+    <div class="head">
+      <h2>FLUKE 289</h2>
+      <div id="flukeStatus" class="status bad"><span class="dot"></span>НЕ Е СВЪРЗАН</div>
+    </div>
+    <div class="body">
+      <div class="measure"><span id="flukeValue" class="value">--</span><span id="flukeUnit" class="unit"></span></div>
+      <div id="flukeMode" class="mode">NO DATA</div>
+      <div class="meta">
+        <span>Device: <b id="flukeName">—</b></span>
+        <span>Packets: <b id="flukePackets">0</b></span>
+        <span>Last: <b id="flukeLast">—</b></span>
+        <span>BLE: <b>notify</b></span>
+      </div>
+      <div class="actions">
+        <button id="flukeConnect" class="primary">Свържи FLUKE</button>
+        <button id="flukeDisconnect" disabled>Разкачи</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="head">
+      <h2>OWON CMS061</h2>
+      <div id="owonStatus" class="status bad"><span class="dot"></span>НЕ Е СВЪРЗАН</div>
+    </div>
+    <div class="body">
+      <div class="measure"><span id="owonValue" class="value">--</span><span id="owonUnit" class="unit"></span></div>
+      <div class="mode"><span id="owonMode">NO DATA</span><span id="owonHold" class="hold hidden">HOLD</span></div>
+      <div class="meta">
+        <span>Device: <b id="owonName">—</b></span>
+        <span>Packets: <b id="owonPackets">0</b></span>
+        <span>Last: <b id="owonLast">—</b></span>
+        <span>BLE: <b>FFF4</b></span>
+      </div>
+      <div class="actions three">
+        <button id="owonConnect" class="primary">Свържи OWON</button>
+        <button id="owonDisconnect" disabled>Разкачи</button>
+        <button id="owonHoldBtn" class="warn" disabled>HOLD</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="tools">
+    <div class="toolsGrid">
+      <button id="logToggle">Старт CSV лог</button>
+      <button id="shareCsv" disabled>Сподели CSV</button>
+      <button id="saveCsv" disabled>Запази CSV</button>
+      <button id="installBtn" class="primary hidden">Инсталирай приложението</button>
+      <button id="wakeBtn">Екран ON</button>
+    </div>
+    <label class="check"><input id="rawPackets" type="checkbox"> Показвай raw BLE пакети</label>
+    <div class="note">За връзка натисни бутона и избери устройството от Bluetooth прозореца на Chrome. Ако ESP32-S3/VGA приемникът е свързан към същия уред, първо го разкачи.</div>
+  </section>
+
+  <div id="eventLog" class="log"></div>
+</main>
+
+<script>
+'use strict';
+
+const OWON_SERVICE='0000fff0-0000-1000-8000-00805f9b34fb';
+const OWON_CONTROL='0000fff3-0000-1000-8000-00805f9b34fb';
+const OWON_NOTIFY ='0000fff4-0000-1000-8000-00805f9b34fb';
+const FLUKE_SERVICE='6f289001-b5a3-f393-e0a9-e50e24dcca9e';
+const FLUKE_MEAS='6f289002-b5a3-f393-e0a9-e50e24dcca9e';
+
+const $=id=>document.getElementById(id);
+const state={
+ fluke:{device:null,ch:null,packets:0},
+ owon:{device:null,notify:null,control:null,packets:0,holdStable:false,holdCandidate:null,holdCount:0},
+ logging:false,rows:[],wakeLock:null
+};
+const time=()=>new Date().toLocaleTimeString('bg-BG',{hour12:false});
+const iso=()=>new Date().toISOString();
+
+function log(s){
+ $('eventLog').textContent+=`[${time()}] ${s}\n`;
+ $('eventLog').scrollTop=$('eventLog').scrollHeight;
+}
+function setStatus(w,t,k){
+ const e=$(w+'Status');e.className='status '+k;e.innerHTML='<span class="dot"></span>'+t;
+}
+function last(w){$(w+'Last').textContent=time()}
+function csvQ(v){return '"'+String(v??'').replaceAll('"','""')+'"'}
+function addCsv(src,v,u,m,h,raw){
+ if(!state.logging)return;
+ state.rows.push([iso(),src,v,u,m,h?'1':'0',raw]);
+ $('saveCsv').disabled=false;$('shareCsv').disabled=false;
+}
+function hex(bytes){return [...bytes].map(x=>x.toString(16).padStart(2,'0').toUpperCase()).join(' ')}
+
+function trimZeros(s){return s.replace(/(\.\d*?[1-9])0+$|\.0+$/,'$1')}
+function eng(value,base){
+ let s=value,p='';
+ const a=Math.abs(value),ok=['V','A','Ohm','Hz','F','s'].includes(base);
+ if(ok&&value!==0){
+  if(a>=1e9){s=value/1e9;p='G'}else if(a>=1e6){s=value/1e6;p='M'}
+  else if(a>=1e3){s=value/1e3;p='k'}else if(a>=1){s=value}
+  else if(a>=1e-3){s=value*1e3;p='m'}else if(a>=1e-6){s=value*1e6;p='µ'}
+  else if(a>=1e-9){s=value*1e9;p='n'}else{s=value*1e12;p='p'}
+ }
+ const aa=Math.abs(s);let d=6;if(aa>=100)d=3;else if(aa>=10)d=4;else if(aa>=1)d=5;
+ let txt=trimZeros(s.toFixed(d));if(txt==='-0')txt='0';
+ return {value:txt.replace('.',','),unit:p+(base||'')}
+}
+function flukeMode(unit,acdc,test){
+ let t;
+ if(unit==='V')t=(acdc?acdc+' ':'')+'VOLT';
+ else if(unit==='A')t=(acdc?acdc+' ':'')+'CURRENT';
+ else if(unit==='Ohm')t='OHM';
+ else if(unit==='Hz')t='FREQUENCY';
+ else if(unit==='F')t='CAPACITANCE';
+ else if(unit==='s')t='TIME';
+ else t=(acdc?acdc+' ':'')+unit;
+ return (test?'TEST ':'')+t
+}
+function decodeFluke(dv){
+ const b=new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength);
+ const raw=new TextDecoder().decode(b).trim(),p=raw.split(',');
+ if(p.length<3||!['M','T'].includes(p[0]))throw Error('невалиден пакет');
+ const n=Number(p[1]);if(!Number.isFinite(n))throw Error('невалидна стойност');
+ const unit=(p[2]||'').trim(),acdc=(p[3]||'').trim().toUpperCase(),e=eng(n,unit);
+ return {value:e.value,unit:e.unit,mode:flukeMode(unit,acdc,p[0]==='T'),hold:false,raw}
+}
+
+function overload(fn,r){if(fn===11)return r>8000;if(fn===6)return r>=20000;return r>=21000}
+function owonUM(meta,fn,scale){
+ const mv=(fn===0||fn===1)&&((meta&0x20)===0);
+ switch(fn){
+  case 0:return{unit:mv?'mV':'V',mode:'DC VOLT'};case 1:return{unit:mv?'mV':'V',mode:'AC VOLT'};
+  case 2:return{unit:'A',mode:'DC CURRENT'};case 3:return{unit:'A',mode:'AC CURRENT'};
+  case 4:return{unit:['Ohm','kOhm','MOhm','GOhm'][scale&3],mode:'OHM'};
+  case 5:return{unit:['pF','nF','uF','mF'][scale&3],mode:'CAPACITANCE'};
+  case 6:return{unit:['Hz','kHz','MHz','GHz'][scale&3],mode:'FREQUENCY'};
+  case 10:return{unit:'V',mode:'DIODE'};case 11:return{unit:'Ohm',mode:'CONTINUITY'};
+  case 13:return{unit:'',mode:'NCV'};case 14:return{unit:'V',mode:'SCOPE V'};case 15:return{unit:'A',mode:'SCOPE A'};
+  default:return{unit:'',mode:'UNKNOWN'}
+ }
+}
+function updHold(b){
+ if(b.length<=12)return false;
+ const sample=(b[12]&1)!==0,o=state.owon;
+ if(o.holdCandidate===null||sample!==o.holdCandidate){o.holdCandidate=sample;o.holdCount=1}
+ else if(o.holdCount<2)o.holdCount++;
+ if(o.holdCount>=2)o.holdStable=o.holdCandidate;
+ return o.holdStable
+}
+function decodeOwon(dv){
+ const b=new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength);
+ if(b.length<13)throw Error('къс пакет');
+ const meta=(b[1]<<8)|b[0],raw=(b[4]<<8)|b[3],fn=(meta>>6)&15,scale=(meta>>3)&3,dec=meta&7;
+ const neg=(b[5]&0x80)!==0&&raw!==0;let v;
+ if(overload(fn,raw))v='OL';
+ else{
+  const d=String(raw);
+  if(dec===0)v=d;
+  else if(d.length>dec){const pos=d.length-dec;v=d.slice(0,pos)+','+d.slice(pos)}
+  else v='0,'+'0'.repeat(dec-d.length)+d;
+  if(neg)v='-'+v;
+ }
+ const um=owonUM(meta,fn,scale);
+ return{value:v,unit:um.unit,mode:um.mode,hold:updHold(b),raw:hex(b)}
+}
+
+function onFluke(ev){
+ state.fluke.packets++;$('flukePackets').textContent=state.fluke.packets;last('fluke');
+ try{
+  const m=decodeFluke(ev.target.value);
+  $('flukeValue').textContent=m.value;$('flukeUnit').textContent=m.unit;$('flukeMode').textContent=m.mode;
+  addCsv('FLUKE289',m.value,m.unit,m.mode,false,m.raw);
+  if($('rawPackets').checked)log('FLUKE '+m.raw)
+ }catch(e){log('FLUKE decode: '+e.message)}
+}
+function onOwon(ev){
+ state.owon.packets++;$('owonPackets').textContent=state.owon.packets;last('owon');
+ try{
+  const m=decodeOwon(ev.target.value);
+  $('owonValue').textContent=m.value;$('owonUnit').textContent=m.unit;$('owonMode').textContent=m.mode;
+  $('owonHold').classList.toggle('hidden',!m.hold);
+  addCsv('OWON',m.value,m.unit,m.mode,m.hold,m.raw);
+  if($('rawPackets').checked)log('OWON '+m.raw)
+ }catch(e){log('OWON decode: '+e.message)}
+}
+
+async function connectFluke(){
+ try{
+  setStatus('fluke','ИЗБОР…','wait');
+  const d=await navigator.bluetooth.requestDevice({
+   filters:[{name:'FLUKE289_BLE'},{namePrefix:'FLUKE289'},{services:[FLUKE_SERVICE]}],
+   optionalServices:[FLUKE_SERVICE]
+  });
+  state.fluke.device=d;d.addEventListener('gattserverdisconnected',()=>discFluke(true));
+  setStatus('fluke','СВЪРЗВАНЕ…','wait');
+  const g=await d.gatt.connect(),s=await g.getPrimaryService(FLUKE_SERVICE),c=await s.getCharacteristic(FLUKE_MEAS);
+  await c.startNotifications();c.addEventListener('characteristicvaluechanged',onFluke);
+  state.fluke.ch=c;state.fluke.packets=0;$('flukePackets').textContent='0';$('flukeName').textContent=d.name||'FLUKE289_BLE';
+  $('flukeConnect').disabled=true;$('flukeDisconnect').disabled=false;setStatus('fluke','СВЪРЗАН','ok');log('FLUKE connected')
+ }catch(e){setStatus('fluke','НЕ Е СВЪРЗАН','bad');log('FLUKE: '+e.message)}
+}
+function discFluke(event=false){
+ const d=state.fluke.device;if(!event&&d?.gatt?.connected)d.gatt.disconnect();
+ state.fluke.device=null;state.fluke.ch=null;$('flukeConnect').disabled=false;$('flukeDisconnect').disabled=true;
+ setStatus('fluke','НЕ Е СВЪРЗАН','bad');log('FLUKE disconnected')
+}
+
+async function connectOwon(){
+ try{
+  setStatus('owon','ИЗБОР…','wait');
+  const d=await navigator.bluetooth.requestDevice({
+   filters:[{namePrefix:'BDM'},{namePrefix:'OWON'},{namePrefix:'CMS'},{services:[OWON_SERVICE]}],
+   optionalServices:[OWON_SERVICE]
+  });
+  state.owon.device=d;d.addEventListener('gattserverdisconnected',()=>discOwon(true));
+  setStatus('owon','СВЪРЗВАНЕ…','wait');
+  const g=await d.gatt.connect(),s=await g.getPrimaryService(OWON_SERVICE);
+  state.owon.control=await s.getCharacteristic(OWON_CONTROL);state.owon.notify=await s.getCharacteristic(OWON_NOTIFY);
+  await state.owon.notify.startNotifications();state.owon.notify.addEventListener('characteristicvaluechanged',onOwon);
+  state.owon.packets=0;state.owon.holdStable=false;state.owon.holdCandidate=null;state.owon.holdCount=0;
+  $('owonPackets').textContent='0';$('owonName').textContent=d.name||'BDM';
+  $('owonConnect').disabled=true;$('owonDisconnect').disabled=false;$('owonHoldBtn').disabled=false;
+  setStatus('owon','СВЪРЗАН','ok');log('OWON connected')
+ }catch(e){setStatus('owon','НЕ Е СВЪРЗАН','bad');log('OWON: '+e.message)}
+}
+function discOwon(event=false){
+ const d=state.owon.device;if(!event&&d?.gatt?.connected)d.gatt.disconnect();
+ state.owon.device=null;state.owon.notify=null;state.owon.control=null;$('owonConnect').disabled=false;
+ $('owonDisconnect').disabled=true;$('owonHoldBtn').disabled=true;$('owonHold').classList.add('hidden');
+ setStatus('owon','НЕ Е СВЪРЗАН','bad');log('OWON disconnected')
+}
+async function hold(){
+ try{
+  const c=state.owon.control;if(!c)throw Error('няма control characteristic');
+  const p=new Uint8Array([0x03,0x01]);
+  if(c.properties.writeWithoutResponse)await c.writeValueWithoutResponse(p);else await c.writeValueWithResponse(p);
+  log('OWON HOLD: 03 01')
+ }catch(e){log('HOLD: '+e.message)}
+}
+
+function csvText(){
+ const head=['timestamp','source','value','unit','mode','hold','raw'];
+ return '\ufeffsep=,\r\n'+[head,...state.rows].map(r=>r.map(csvQ).join(',')).join('\r\n')
+}
+function csvFile(){
+ return new File([csvText()],'ble_meter_'+new Date().toISOString().replace(/[:.]/g,'-')+'.csv',{type:'text/csv;charset=utf-8'})
+}
+function saveCsv(){
+ if(!state.rows.length)return;
+ const f=csvFile(),u=URL.createObjectURL(f),a=document.createElement('a');a.href=u;a.download=f.name;a.click();
+ setTimeout(()=>URL.revokeObjectURL(u),2000)
+}
+async function shareCsv(){
+ if(!state.rows.length)return;
+ const f=csvFile();
+ try{
+  if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({title:'BLE Meter CSV',files:[f]});
+  else saveCsv()
+ }catch(e){if(e.name!=='AbortError')log('Share: '+e.message)}
+}
+
+async function toggleWake(){
+ try{
+  if(state.wakeLock){await state.wakeLock.release();state.wakeLock=null;$('wakeBtn').textContent='Екран ON';return}
+  if(!('wakeLock' in navigator))throw Error('Wake Lock не се поддържа');
+  state.wakeLock=await navigator.wakeLock.request('screen');$('wakeBtn').textContent='Екран OFF';
+  state.wakeLock.addEventListener('release',()=>{state.wakeLock=null;$('wakeBtn').textContent='Екран ON'})
+ }catch(e){log('Wake: '+e.message)}
+}
+
+$('flukeConnect').onclick=connectFluke;$('flukeDisconnect').onclick=()=>discFluke(false);
+$('owonConnect').onclick=connectOwon;$('owonDisconnect').onclick=()=>discOwon(false);$('owonHoldBtn').onclick=hold;
+$('logToggle').onclick=()=>{state.logging=!state.logging;$('logToggle').textContent=state.logging?'Стоп CSV лог':'Старт CSV лог';$('logToggle').classList.toggle('primary',state.logging);log('CSV '+(state.logging?'START':'STOP'))};
+$('saveCsv').onclick=saveCsv;$('shareCsv').onclick=shareCsv;$('wakeBtn').onclick=toggleWake;
+
+document.addEventListener('visibilitychange',async()=>{
+ if(document.visibilityState==='visible'&&state.wakeLock===null&&$('wakeBtn').textContent==='Екран OFF'){
+  try{state.wakeLock=await navigator.wakeLock.request('screen')}catch(e){}
+ }
+});
+
+
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  $('installBtn').classList.remove('hidden');
+  log('PWA: готово за инсталиране');
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  $('installBtn').classList.add('hidden');
+  log('PWA: BLE Meter е инсталирано');
+});
+
+$('installBtn').onclick = async () => {
+  if (!deferredInstallPrompt) {
+    log('PWA: Chrome меню → Install app / Add to Home screen');
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  try { await deferredInstallPrompt.userChoice; } catch(e) {}
+  deferredInstallPrompt = null;
+  $('installBtn').classList.add('hidden');
+};
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      await navigator.serviceWorker.register('./sw.js', {scope:'./'});
+      log('PWA service worker ready');
+    } catch (e) {
+      log('PWA service worker error: ' + e.message);
+    }
+  });
+}
+
+(async()=>{
+ if(!('bluetooth' in navigator)){
+  $('btSupport').className='btline status bad';$('btSupport').innerHTML='<span class="dot"></span>WEB BLUETOOTH ЛИПСВА';
+  $('flukeConnect').disabled=true;$('owonConnect').disabled=true;log('Отвори файла с Google Chrome за Android.');return
+ }
+ try{
+  const a=await navigator.bluetooth.getAvailability();
+  $('btSupport').className='btline status '+(a?'ok':'bad');
+  $('btSupport').innerHTML='<span class="dot"></span>'+(a?'BLUETOOTH ГОТОВ':'BLUETOOTH НЕДОСТЪПЕН');
+ }catch(e){
+  $('btSupport').className='btline status ok';$('btSupport').innerHTML='<span class="dot"></span>WEB BLUETOOTH ГОТОВ'
+ }
+ log('BLE Meter Android ready')
+})();
+</script>
+</body>
+</html>
