@@ -1,4 +1,4 @@
-const CACHE = 'ble-meter-pwa-v3';
+const CACHE = 'ble-meter-pwa-v4';
 const ASSETS = [
   './',
   './index.html',

@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<link rel="manifest" href="./manifest.webmanifest?v=3">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=3">
-<link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png?v=3">
-<link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png?v=3">
+<link rel="manifest" href="./manifest.webmanifest?v=4">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=4">
+<link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png?v=4">
+<link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png?v=4">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -69,6 +69,32 @@ input[type=checkbox]{width:19px;height:19px}
  .value{font-size:58px}.unit{font-size:26px}
  .actions.three{grid-template-columns:1fr 1fr 1fr}
 }
+
+.signalBox{
+  grid-column:1 / -1;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin-top:5px;padding-top:8px;border-top:1px solid var(--line)
+}
+.signalLabel{color:var(--muted);font-size:12px}
+.signalBars{display:inline-flex;align-items:flex-end;gap:2px;height:17px}
+.signalBars i{display:block;width:4px;border-radius:2px;background:#4c5662}
+.signalBars i:nth-child(1){height:5px}
+.signalBars i:nth-child(2){height:8px}
+.signalBars i:nth-child(3){height:12px}
+.signalBars i:nth-child(4){height:16px}
+.signalBars.q1 i:nth-child(-n+1),
+.signalBars.q2 i:nth-child(-n+2),
+.signalBars.q3 i:nth-child(-n+3),
+.signalBars.q4 i:nth-child(-n+4){background:var(--ok)}
+.signalBars.q1 i:nth-child(n+2),
+.signalBars.q2 i:nth-child(n+3),
+.signalBars.q3 i:nth-child(n+4){background:#4c5662}
+.signalText{font-size:12px;font-weight:800;min-width:46px}
+.signalText.good{color:var(--ok)}
+.signalText.ok{color:var(--warn)}
+.signalText.bad{color:var(--bad)}
+.rssi{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#d7e0e9}
+
 </style>
 </head>
 <body>
@@ -92,6 +118,13 @@ input[type=checkbox]{width:19px;height:19px}
         <span>Packets: <b id="flukePackets">0</b></span>
         <span>Last: <b id="flukeLast">—</b></span>
         <span>BLE: <b>notify</b></span>
+        <div class="signalBox">
+          <span class="signalLabel">LINK</span>
+          <span id="flukeBars" class="signalBars"><i></i><i></i><i></i><i></i></span>
+          <span id="flukeLink" class="signalText bad">NO DATA</span>
+          <span class="signalLabel">RSSI</span>
+          <b id="flukeRssi" class="rssi">— dBm</b>
+        </div>
       </div>
       <div class="actions">
         <button id="flukeConnect" class="primary">Свържи FLUKE</button>
@@ -113,6 +146,13 @@ input[type=checkbox]{width:19px;height:19px}
         <span>Packets: <b id="owonPackets">0</b></span>
         <span>Last: <b id="owonLast">—</b></span>
         <span>BLE: <b>FFF4</b></span>
+        <div class="signalBox">
+          <span class="signalLabel">LINK</span>
+          <span id="owonBars" class="signalBars"><i></i><i></i><i></i><i></i></span>
+          <span id="owonLink" class="signalText bad">NO DATA</span>
+          <span class="signalLabel">RSSI</span>
+          <b id="owonRssi" class="rssi">— dBm</b>
+        </div>
       </div>
       <div class="actions three">
         <button id="owonConnect" class="primary">Свържи OWON</button>
@@ -148,8 +188,8 @@ const FLUKE_MEAS='6f289002-b5a3-f393-e0a9-e50e24dcca9e';
 
 const $=id=>document.getElementById(id);
 const state={
- fluke:{device:null,ch:null,packets:0},
- owon:{device:null,notify:null,control:null,packets:0,holdStable:false,holdCandidate:null,holdCount:0},
+ fluke:{device:null,ch:null,packets:0,lastPacketAt:0,emaDt:0,lastRssi:null,advHandler:null},
+ owon:{device:null,notify:null,control:null,packets:0,holdStable:false,holdCandidate:null,holdCount:0,lastPacketAt:0,emaDt:0,lastRssi:null,advHandler:null},
  logging:false,rows:[],wakeLock:null
 };
 const time=()=>new Date().toLocaleTimeString('bg-BG',{hour12:false});
@@ -244,8 +284,69 @@ function decodeOwon(dv){
  return{value:v,unit:um.unit,mode:um.mode,hold:updHold(b),raw:hex(b)}
 }
 
+
+function signalQuality(which){
+ const s=state[which],now=performance.now();
+ if(!s.device || !s.device.gatt || !s.device.gatt.connected)return 0;
+ if(!s.lastPacketAt)return 0;
+ const age=now-s.lastPacketAt;
+ const dt=s.emaDt||age;
+ if(age>2200)return 0;
+ if(age<=500 && dt<=350)return 4;
+ if(age<=800 && dt<=550)return 3;
+ if(age<=1300 && dt<=900)return 2;
+ return 1;
+}
+function drawSignal(which){
+ const q=signalQuality(which);
+ const bars=$(which+'Bars');
+ bars.className='signalBars'+(q?' q'+q:'');
+ const txt=$(which+'Link');
+ const labels=['NO DATA','POOR','WEAK','OK','GOOD'];
+ txt.textContent=labels[q];
+ txt.className='signalText '+(q>=4?'good':q>=2?'ok':'bad');
+ const rssi=state[which].lastRssi;
+ $(which+'Rssi').textContent=(Number.isFinite(rssi)?rssi:'—')+' dBm';
+}
+function notePacket(which){
+ const s=state[which],now=performance.now();
+ if(s.lastPacketAt){
+   const dt=now-s.lastPacketAt;
+   if(dt>20 && dt<5000)s.emaDt=s.emaDt ? (s.emaDt*0.78+dt*0.22) : dt;
+ }
+ s.lastPacketAt=now;
+ drawSignal(which);
+}
+function resetSignal(which){
+ const s=state[which];
+ s.lastPacketAt=0;s.emaDt=0;s.lastRssi=null;
+ drawSignal(which);
+}
+async function tryWatchRssi(which,device){
+ if(!device || typeof device.watchAdvertisements!=='function')return;
+ try{
+   if(state[which].advHandler){
+     try{device.removeEventListener('advertisementreceived',state[which].advHandler)}catch(e){}
+   }
+   const handler=(ev)=>{
+     if(Number.isFinite(ev.rssi)){
+       state[which].lastRssi=ev.rssi;
+       drawSignal(which);
+     }
+   };
+   state[which].advHandler=handler;
+   device.addEventListener('advertisementreceived',handler);
+   await device.watchAdvertisements();
+   log(which.toUpperCase()+': RSSI monitoring available');
+ }catch(e){
+   // Web Bluetooth implementations may not expose advertisements while connected.
+   log(which.toUpperCase()+': RSSI unavailable in this Chrome/Android');
+ }
+}
+setInterval(()=>{drawSignal('fluke');drawSignal('owon')},500);
+
 function onFluke(ev){
- state.fluke.packets++;$('flukePackets').textContent=state.fluke.packets;last('fluke');
+ state.fluke.packets++;$('flukePackets').textContent=state.fluke.packets;last('fluke');notePacket('fluke');
  try{
   const m=decodeFluke(ev.target.value);
   $('flukeValue').textContent=m.value;$('flukeUnit').textContent=m.unit;$('flukeMode').textContent=m.mode;
@@ -254,7 +355,7 @@ function onFluke(ev){
  }catch(e){log('FLUKE decode: '+e.message)}
 }
 function onOwon(ev){
- state.owon.packets++;$('owonPackets').textContent=state.owon.packets;last('owon');
+ state.owon.packets++;$('owonPackets').textContent=state.owon.packets;last('owon');notePacket('owon');
  try{
   const m=decodeOwon(ev.target.value);
   $('owonValue').textContent=m.value;$('owonUnit').textContent=m.unit;$('owonMode').textContent=m.mode;
@@ -276,13 +377,13 @@ async function connectFluke(){
   const g=await d.gatt.connect(),s=await g.getPrimaryService(FLUKE_SERVICE),c=await s.getCharacteristic(FLUKE_MEAS);
   await c.startNotifications();c.addEventListener('characteristicvaluechanged',onFluke);
   state.fluke.ch=c;state.fluke.packets=0;$('flukePackets').textContent='0';$('flukeName').textContent=d.name||'FLUKE289_BLE';
-  $('flukeConnect').disabled=true;$('flukeDisconnect').disabled=false;setStatus('fluke','СВЪРЗАН','ok');log('FLUKE connected')
+  $('flukeConnect').disabled=true;$('flukeDisconnect').disabled=false;setStatus('fluke','СВЪРЗАН','ok');resetSignal('fluke');tryWatchRssi('fluke',d);log('FLUKE connected')
  }catch(e){setStatus('fluke','НЕ Е СВЪРЗАН','bad');log('FLUKE: '+e.message)}
 }
 function discFluke(event=false){
  const d=state.fluke.device;if(!event&&d?.gatt?.connected)d.gatt.disconnect();
  state.fluke.device=null;state.fluke.ch=null;$('flukeConnect').disabled=false;$('flukeDisconnect').disabled=true;
- setStatus('fluke','НЕ Е СВЪРЗАН','bad');log('FLUKE disconnected')
+ setStatus('fluke','НЕ Е СВЪРЗАН','bad');resetSignal('fluke');log('FLUKE disconnected')
 }
 
 async function connectOwon(){
@@ -300,14 +401,14 @@ async function connectOwon(){
   state.owon.packets=0;state.owon.holdStable=false;state.owon.holdCandidate=null;state.owon.holdCount=0;
   $('owonPackets').textContent='0';$('owonName').textContent=d.name||'BDM';
   $('owonConnect').disabled=true;$('owonDisconnect').disabled=false;$('owonHoldBtn').disabled=false;
-  setStatus('owon','СВЪРЗАН','ok');log('OWON connected')
+  setStatus('owon','СВЪРЗАН','ok');resetSignal('owon');tryWatchRssi('owon',d);log('OWON connected')
  }catch(e){setStatus('owon','НЕ Е СВЪРЗАН','bad');log('OWON: '+e.message)}
 }
 function discOwon(event=false){
  const d=state.owon.device;if(!event&&d?.gatt?.connected)d.gatt.disconnect();
  state.owon.device=null;state.owon.notify=null;state.owon.control=null;$('owonConnect').disabled=false;
  $('owonDisconnect').disabled=true;$('owonHoldBtn').disabled=true;$('owonHold').classList.add('hidden');
- setStatus('owon','НЕ Е СВЪРЗАН','bad');log('OWON disconnected')
+ setStatus('owon','НЕ Е СВЪРЗАН','bad');resetSignal('owon');log('OWON disconnected')
 }
 async function hold(){
  try{
