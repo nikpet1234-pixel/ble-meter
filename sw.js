@@ -1,11 +1,11 @@
-const CACHE = 'ble-meter-pwa-v4';
+const CACHE = 'ble-meter-pwa-v5';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './icon-192.png',
-  './icon-512.png',
-  './icon-maskable-512.png'
+  './ble-meter-192-v5.png',
+  './ble-meter-512-v5.png',
+  './ble-meter-maskable-512-v5.png'
 ];
 
 self.addEventListener('install', event => {
